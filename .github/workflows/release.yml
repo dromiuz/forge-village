@@ -18,13 +18,14 @@ jobs:
         run: cd electron-app && npm ci
       - name: Build macOS
         run: cd electron-app && npx electron-builder --mac
-      - name: Upload artifacts
+      - name: Upload macOS artifacts
         uses: actions/upload-artifact@v4
         with:
           name: macos
           path: |
             electron-app/dist/*.dmg
             electron-app/dist/*.zip
+          if-no-files-found: ignore
 
   build-win:
     runs-on: windows-latest
@@ -38,13 +39,14 @@ jobs:
         run: cd electron-app && npm ci
       - name: Build Windows
         run: cd electron-app && npx electron-builder --win
-      - name: Upload artifacts
+      - name: Upload Windows artifacts
         uses: actions/upload-artifact@v4
         with:
           name: windows
           path: |
             electron-app/dist/*.exe
             electron-app/dist/*.zip
+          if-no-files-found: ignore
 
   create-release:
     needs: [build-mac, build-win]
@@ -60,6 +62,7 @@ jobs:
           tag_name: ${{ github.ref_name }}
           name: Release ${{ github.ref_name }}
           generate_release_notes: true
+          overwrite: true
           files: |
             artifacts/macos/*.dmg
             artifacts/macos/*.zip

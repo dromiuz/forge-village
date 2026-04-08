@@ -45,6 +45,7 @@
         ]
       }
     ],
+    "artifactName": "${name}-${version}-${os}-${arch}.${ext}",
     "asar": true,
     "mac": {
       "category": "public.app-category.music",
