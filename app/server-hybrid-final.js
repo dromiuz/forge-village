@@ -681,7 +681,7 @@ function updateAttribution(obj, action = 'modified') {
       trackingDone: trackingDone,
       trackingTotal: tracking.length,
       missing: missing,
-      readiness: total > 0 ? Math.round((done / total) * 100) : 0
+      readiness: total > 0 ? Math.round((done / total) * 100) : (song.progress || 0)
     };
   }
 

@@ -7,8 +7,10 @@ out/
 .env
 .env.*
 !.env.example
-app/data/
+app/data/*
 !app/data/.gitkeep
+app/assets/uploads/*
+!app/assets/uploads/.gitkeep
 .DS_Store
 .vercel/
 .__MACOSX/
@@ -16,3 +18,5 @@ electron-app/dist/
 electron-app/node_modules/
 app/node_modules/
 landing-page/.gitignore
+screenshots/
+release-notes.md
