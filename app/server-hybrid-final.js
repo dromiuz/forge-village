@@ -73,9 +73,9 @@ app.use(cors({
 app.use(express.json({ limit: '50mb' }));
 app.use(express.urlencoded({ extended: true }));
 
-// Serve login page at root
+// Serve main app at root
 app.get('/', (req, res) => {
-  res.sendFile(path.join(PUBLIC_DIR, 'login.html'));
+  res.sendFile(path.join(PUBLIC_DIR, 'index.html'));
 });
 
 
