@@ -1,7 +1,7 @@
 const { app, BrowserWindow, ipcMain, dialog, shell, Tray, Menu, nativeImage } = require('electron');
 const path = require('path');
 const fs = require('fs');
-const { exec } = require('child_process');
+const { spawn, exec } = require('child_process');
 const http = require('http');
 
 let mainWindow;
@@ -163,35 +163,49 @@ async function startServer() {
 
   // Write .env for the server
   const envContent = `PORT=${SERVER_PORT}
-SKIP_AUTH=true
+SKIP_AUTH=***
 WORKSPACE_DIR=${userDataDir}
 NODE_ENV=production
 `;
   fs.writeFileSync(path.join(APP_DIR, '.env'), envContent);
 
+  // Spawn the server using the Electron binary (bundles Node) to avoid system Node dependency
+  const scriptPath = path.join(APP_DIR, 'server-hybrid-final.js');
+  const logPath = path.join(userDataDir, 'server.log');
+  const logStream = fs.createWriteStream(logPath, { flags: 'a' });
+
+  const env = {
+    ...process.env,
+    PORT: SERVER_PORT,
+    NODE_ENV: 'production',
+    WORKSPACE_DIR: userDataDir
+    // SKIP_AUTH is read from .env file
+  };
+
   return new Promise((resolve, reject) => {
-    let cmd;
-    if (process.platform === 'win32') {
-      // Windows: use cmd /c with start /b to run in background
-      const logFile = path.join(userDataDir, 'server.log');
-      cmd = `cmd /c "cd /d "${APP_DIR}" && set PORT=${SERVER_PORT} && set NODE_ENV=production && set WORKSPACE_DIR=${userDataDir} && node "server-hybrid-final.js" > "${logFile}" 2>&1"`;
-      exec(cmd, (err, stdout, stderr) => {
-        if (err) console.log(`[Main] Server exec on Windows: code=${err.code}`);
-      });
-    } else {
-      // macOS/Linux: use nohup to background
-      cmd = `cd "${APP_DIR}" && PORT=${SERVER_PORT} NODE_ENV=production WORKSPACE_DIR="${userDataDir}" nohup node "server-hybrid-final.js" > /tmp/forge-village-server.log 2>&1 &`;
-      console.log(`[Main] Starting server: ${cmd}`);
-      exec(cmd, (err, stdout, stderr) => {
-        if (err && err.code !== 0) {
-          console.log(`[Main] Exec returned (normal for nohup background): code=${err ? err.code : 0}`);
-        }
-      });
-    }
+    const child = spawn(process.execPath, [scriptPath], {
+      cwd: APP_DIR,
+      detached: true,
+      stdio: ['ignore', logStream, logStream],
+      env: env
+    });
+
+    child.on('error', (err) => {
+      console.error('[Main] Failed to start server process:', err);
+      reject(err);
+    });
+
+    child.on('exit', (code) => {
+      if (code !== 0) {
+        console.error(`[Main] Server process exited with code ${code}`);
+      }
+    });
+
+    child.unref();
 
     // Wait for server to be ready
     waitForServer()
-      .then((data) => {
+      .then(() => {
         console.log(`[Main] Server is ready on port ${SERVER_PORT}`);
         resolve();
       })
