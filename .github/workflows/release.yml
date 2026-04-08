@@ -51,6 +51,8 @@ jobs:
   create-release:
     needs: [build-mac, build-win]
     runs-on: ubuntu-latest
+    permissions:
+      contents: write
     steps:
       - name: Download all artifacts
         uses: actions/download-artifact@v4
@@ -62,7 +64,7 @@ jobs:
           tag_name: ${{ github.ref_name }}
           name: Release ${{ github.ref_name }}
           generate_release_notes: true
-          overwrite: true
+          overwrite_files: true
           files: |
             artifacts/macos/*.dmg
             artifacts/macos/*.zip
