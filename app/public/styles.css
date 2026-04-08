@@ -1738,8 +1738,11 @@ h1 {
 }
 
 .forge-app {
-  max-width: 1680px;
+  display: grid;
+  grid-template-columns: 280px 1fr;
   gap: 18px;
+  max-width: 1680px;
+  margin: 0 auto;
   padding: 18px;
 }
 

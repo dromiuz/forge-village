@@ -1282,21 +1282,41 @@ function updateAttribution(obj, action = 'modified') {
       const downloadUrl = `/api/files/download/${encodeURIComponent(safeFolder)}/${encodeURIComponent(req.file.filename)}`;
 
       const fileStat = fs.statSync(req.file.path);
-
       const fn = path.basename(req.file.path);
+
+      // Build asset object
+      const asset = addAttribution({
+        id: createId('asset'),
+        name: String(body.assetName || req.file.originalname || '').trim(),
+        type: String(body.assetType || '').trim(),
+        status: String(body.assetStatus || 'ready').trim(),
+        notes: String(body.assetNotes || '').trim(),
+        fileName: fn,
+        filePath: path.relative(WORKSPACE_ROOT, req.file.path),
+        fileUrl: fileUrl,
+        downloadUrl: downloadUrl,
+        size: fileStat.size,
+        mimeType: req.file.mimetype,
+        kind: inferAssetKind({ name: fn, mimeType: req.file.mimetype }),
+        isActiveReview: body.isActiveReview === 'true' || body.isActiveReview === true
+      }, 'uploaded');
+
+      // Update workspace with new asset
+      const workspace = loadMusicWorkspace();
+      const song = getSongById(workspace, songId);
+      if (!song) {
+        return sendJson(res, 404, { error: 'Song not found.' });
+      }
+
+      song.assets = normalizeAssets([...(song.assets || []), asset]);
+      const saved = saveMusicWorkspace(workspace);
+      const updatedSong = getSongById(saved, songId);
+
       sendJson(res, 200, {
         ok: true,
-        file: {
-          songFolder: safeFolder,
-          fileName: fn,
-          originalName: req.file.originalname,
-          fileUrl: `/files/uploads/${encodeURIComponent(safeFolder)}/${encodeURIComponent(fn)}`,
-          downloadUrl: `/api/files/download/${encodeURIComponent(safeFolder)}/${encodeURIComponent(fn)}`,
-          size: fileStat.size,
-          sizeHuman: formatFileSize(fileStat.size),
-          mimeType: req.file.mimetype,
-          kind: inferAssetKind({ name: fn, mimeType: req.file.mimetype })
-        }
+        asset,
+        workspace: saved,
+        song: updatedSong
       });
     } catch (error) {
       console.error('Multipart upload error:', error);
