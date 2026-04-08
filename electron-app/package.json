@@ -1,0 +1,69 @@
+{
+  "name": "forge-village",
+  "version": "2.1.1",
+  "description": "Independent musician workspace — song-first, local-first",
+  "main": "main.js",
+  "scripts": {
+    "start": "electron .",
+    "dev": "electron . --enable-logging",
+    "build": "electron-builder --mac --dir",
+    "package": "electron-builder --mac"
+  },
+  "keywords": [
+    "music",
+    "production",
+    "workspace",
+    "local-first"
+  ],
+  "author": "Independent Musician",
+  "license": "MIT",
+  "devDependencies": {
+    "electron": "^30.0.0",
+    "electron-builder": "^24.13.3"
+  },
+  "build": {
+    "appId": "com.forgevillage.app",
+    "productName": "Forge Village",
+    "directories": {
+      "output": "dist"
+    },
+    "files": [
+      "main.js",
+      "preload.js"
+    ],
+    "extraResources": [
+      {
+        "from": "../app",
+        "to": "app",
+        "filter": [
+          "**/*",
+          "!node_modules/.cache",
+          "!.git*",
+          "!.env.*",
+          "!*.pid",
+          "!*.log"
+        ]
+      }
+    ],
+    "asar": true,
+    "mac": {
+      "category": "public.app-category.music",
+      "target": ["dmg", "zip"],
+      "icon": "icon.icns"
+    },
+    "win": {
+      "target": [
+        {
+          "target": "portable",
+          "arch": ["x64"]
+        },
+        {
+          "target": "zip",
+          "arch": ["x64"]
+        }
+      ],
+      "icon": "icon.ico",
+      "requestedExecutionLevel": "asInvoker"
+    }
+  }
+}
