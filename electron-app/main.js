@@ -7,7 +7,19 @@ const http = require('http');
 let mainWindow;
 let tray;
 let isQuitting = false;
+let isCreatingWindow = false;
 const SERVER_PORT = 4323;
+
+function logLaunch(message, details = '') {
+  const suffix = details ? `: ${details}` : '';
+  console.log(`[Main] ${message}${suffix}`);
+}
+
+const gotSingleInstanceLock = app.requestSingleInstanceLock();
+if (!gotSingleInstanceLock) {
+  logLaunch('Duplicate instance detected on startup; exiting');
+  process.exit(0);
+}
 
 
 // Generate a tray icon programmatically (works without external files)
@@ -61,18 +73,28 @@ function updateTrayMenu() {
 }
 
 function showMainWindow() {
-  if (!mainWindow) {
+  if (!mainWindow || mainWindow.isDestroyed()) {
     createWindow();
   } else {
+    if (mainWindow.isMinimized()) mainWindow.restore();
     mainWindow.show();
     mainWindow.focus();
-    if (mainWindow.isMinimized()) mainWindow.restore();
   }
   if (process.platform === 'darwin') app.dock.show();
 }
 
+let serverProcess = null;
+
 function killServer() {
   try {
+    if (serverProcess && !serverProcess.killed) {
+      logLaunch('Stopping tracked server child', `pid=${serverProcess.pid || 'unknown'}`);
+      try { serverProcess.kill('SIGTERM'); } catch (_) {}
+      try { serverProcess.kill('SIGKILL'); } catch (_) {}
+      serverProcess = null;
+      return;
+    }
+
     const { execSync } = require('child_process');
     if (process.platform === 'darwin' || process.platform === 'linux') {
       try {
@@ -161,62 +183,71 @@ function waitForServer(maxAttempts = 30, interval = 500) {
 async function startServer() {
   const userDataDir = ensureDataDirs();
 
-  // Write .env for the server
-  const envContent = `PORT=${SERVER_PORT}
-SKIP_AUTH=***
-WORKSPACE_DIR=${userDataDir}
-NODE_ENV=production
-`;
-  fs.writeFileSync(path.join(APP_DIR, '.env'), envContent);
-
-  // Spawn the server using the Electron binary (bundles Node) to avoid system Node dependency
   const scriptPath = path.join(APP_DIR, 'server-hybrid-final.js');
   const logPath = path.join(userDataDir, 'server.log');
-  const logStream = fs.createWriteStream(logPath, { flags: 'a' });
-
   const env = {
     ...process.env,
+    ELECTRON_RUN_AS_NODE: '1',
     PORT: SERVER_PORT,
     NODE_ENV: 'production',
     WORKSPACE_DIR: userDataDir
-    // SKIP_AUTH is read from .env file
   };
 
+  logLaunch('Starting local server', `${scriptPath} on port ${SERVER_PORT}`);
+
+  killServer();
+
   return new Promise((resolve, reject) => {
+    const logFd = fs.openSync(logPath, 'a');
     const child = spawn(process.execPath, [scriptPath], {
       cwd: APP_DIR,
       detached: true,
-      stdio: ['ignore', logStream, logStream],
-      env: env
+      stdio: ['ignore', logFd, logFd],
+      env
     });
+
+    serverProcess = child;
+    fs.closeSync(logFd);
+    logLaunch('Spawned server child', `pid=${child.pid || 'unknown'}`);
 
     child.on('error', (err) => {
       console.error('[Main] Failed to start server process:', err);
       reject(err);
     });
 
-    child.on('exit', (code) => {
+    child.on('exit', (code, signal) => {
       if (code !== 0) {
-        console.error(`[Main] Server process exited with code ${code}`);
+        console.error(`[Main] Server process exited with code ${code}${signal ? ` signal ${signal}` : ''}`);
       }
     });
 
     child.unref();
 
-    // Wait for server to be ready
     waitForServer()
       .then(() => {
-        console.log(`[Main] Server is ready on port ${SERVER_PORT}`);
+        logLaunch('Server is ready', `port=${SERVER_PORT}`);
         resolve();
       })
       .catch(reject);
 
-    // Timeout
     setTimeout(() => reject(new Error('Server startup timed out (15s)')), 15000);
   });
 }
 
 function createWindow() {
+  if (mainWindow && !mainWindow.isDestroyed()) {
+    logLaunch('createWindow skipped', 'main window already exists');
+    return mainWindow;
+  }
+
+  if (isCreatingWindow) {
+    logLaunch('createWindow skipped', 'window creation already in progress');
+    return mainWindow;
+  }
+
+  isCreatingWindow = true;
+  logLaunch('Creating main window');
+
   mainWindow = new BrowserWindow({
     width: 1400,
     height: 950,
@@ -243,18 +274,14 @@ function createWindow() {
   mainWindow.on('hide', () => {
     if (process.platform === 'darwin') app.dock.hide();
   });
-  mainWindow.on('close', (event) => {
-    if (!isQuitting) {
-      event.preventDefault();
-      mainWindow.hide();
-      if (process.platform === 'darwin') app.dock.hide();
-    }
+  mainWindow.on('close', () => {
+    logLaunch('main window close');
   });
   mainWindow.on('closed', () => {
+    isCreatingWindow = false;
+    mainWindow = null;
     if (!isQuitting) {
-      // Recreate if not quitting (keep server alive)
-    } else {
-      mainWindow = null;
+      logLaunch('main window closed while app stays alive');
     }
   });
 
@@ -265,9 +292,17 @@ function createWindow() {
     }
     return { action: 'allow' };
   });
+
+  return mainWindow;
 }
 
+app.on('second-instance', () => {
+  logLaunch('second-instance event received');
+  showMainWindow();
+});
+
 app.whenReady().then(async () => {
+  logLaunch('app.whenReady');
   try {
     await startServer();
     createWindow();
@@ -277,24 +312,25 @@ app.whenReady().then(async () => {
     app.quit();
   }
 
-  // Setup tray icon
   setupTray();
 });
 
 app.on('window-all-closed', (event) => {
-  // Don't quit — minimize to tray instead
+  logLaunch('window-all-closed');
   if (process.platform === 'darwin') {
     event.preventDefault();
   }
 });
 
-// Handle before-quit to prevent the tray from keeping app alive on quit
 app.on('before-quit', () => {
+  logLaunch('before-quit');
   isQuitting = true;
+  killServer();
 });
 
 app.on('activate', () => {
-  if (BrowserWindow.getAllWindows().length === 0) createWindow();
+  logLaunch('activate');
+  showMainWindow();
 });
 
 // ============ IPC HANDLERS ============
