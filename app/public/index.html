@@ -1826,8 +1826,10 @@ async function uploadAssetFile(event) {
 
           setMessage(messageId, `Uploading ${index + 1}/${files.length}...`);
           const formData = new FormData();
-          formData.append('file', file);
+          // Append text fields BEFORE the file so multer's destination/filename
+          // callbacks can reliably read req.body when deciding where to store it.
           formData.append('songId', song.id);
+          formData.append('songTitle', song.title || 'uncategorized');
           formData.append('assetName', files.length === 1 && baseName ? baseName : file.name.replace(/\.[^.]+$/, ''));
           if (assetType) formData.append('assetType', assetType);
           formData.append('assetStatus', status);
@@ -1838,6 +1840,7 @@ async function uploadAssetFile(event) {
           } else {
             formData.append('isActiveReview', 'false');
           }
+          formData.append('file', file);
 
           // ── ABORT CONTROLLER: 60-second timeout for each upload
           const controller = new AbortController();

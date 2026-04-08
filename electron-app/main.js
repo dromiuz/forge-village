@@ -1,6 +1,7 @@
 const { app, BrowserWindow, ipcMain, dialog, shell, Tray, Menu, nativeImage } = require('electron');
 const path = require('path');
 const fs = require('fs');
+const os = require('os');
 const { spawn, exec } = require('child_process');
 const http = require('http');
 
@@ -8,16 +9,68 @@ let mainWindow;
 let tray;
 let isQuitting = false;
 let isCreatingWindow = false;
+let singletonLockFd = null;
 const SERVER_PORT = 4323;
+const SINGLETON_LOCK_PATH = path.join(os.tmpdir(), 'forge-village-electron.lock');
 
 function logLaunch(message, details = '') {
   const suffix = details ? `: ${details}` : '';
   console.log(`[Main] ${message}${suffix}`);
 }
 
-const gotSingleInstanceLock = app.requestSingleInstanceLock();
-if (!gotSingleInstanceLock) {
-  logLaunch('Duplicate instance detected on startup; exiting');
+function cleanupSingletonLock() {
+  try {
+    if (singletonLockFd !== null) {
+      try { fs.closeSync(singletonLockFd); } catch (_) {}
+      singletonLockFd = null;
+    }
+    if (fs.existsSync(SINGLETON_LOCK_PATH)) fs.unlinkSync(SINGLETON_LOCK_PATH);
+  } catch (_) {}
+}
+
+function acquireSingletonLock() {
+  const gotSingleInstanceLock = app.requestSingleInstanceLock();
+  if (!gotSingleInstanceLock) {
+    logLaunch('Duplicate instance detected via Electron lock; exiting');
+    return false;
+  }
+
+  const pidIsAlive = (pid) => {
+    try {
+      return !!pid && process.kill(pid, 0);
+    } catch (_) {
+      return false;
+    }
+  };
+
+  try {
+    if (fs.existsSync(SINGLETON_LOCK_PATH)) {
+      const raw = fs.readFileSync(SINGLETON_LOCK_PATH, 'utf8').trim().split(/\s+/)[0];
+      const existingPid = parseInt(raw, 10);
+      if (pidIsAlive(existingPid)) {
+        logLaunch('Duplicate instance detected via filesystem lock; exiting', `pid=${existingPid}`);
+        try {
+          app.releaseSingleInstanceLock();
+        } catch (_) {}
+        return false;
+      }
+      try { fs.unlinkSync(SINGLETON_LOCK_PATH); } catch (_) {}
+    }
+
+    singletonLockFd = fs.openSync(SINGLETON_LOCK_PATH, 'wx');
+    fs.writeFileSync(singletonLockFd, `${process.pid}\n${new Date().toISOString()}\n`);
+  } catch (err) {
+    logLaunch('Duplicate instance detected via filesystem lock; exiting', err.message);
+    try {
+      app.releaseSingleInstanceLock();
+    } catch (_) {}
+    return false;
+  }
+
+  return true;
+}
+
+if (!acquireSingletonLock()) {
   process.exit(0);
 }
 
@@ -155,27 +208,56 @@ function ensureDataDirs() {
 function waitForServer(maxAttempts = 30, interval = 500) {
   return new Promise((resolve, reject) => {
     let attempts = 0;
+    let done = false;
+    let retryTimer = null;
+    let startupTimer = null;
+
+    const finish = (fn, value) => {
+      if (done) return;
+      done = true;
+      if (retryTimer) clearTimeout(retryTimer);
+      if (startupTimer) clearTimeout(startupTimer);
+      fn(value);
+    };
+
+    const retry = () => {
+      if (done) return;
+      retryTimer = setTimeout(check, interval);
+    };
+
     const check = () => {
-      attempts++;
+      if (done) return;
+      attempts += 1;
       const req = http.get(`http://127.0.0.1:${SERVER_PORT}/api/config`, (res) => {
+        if (done) return;
         if (res.statusCode === 200) {
           let data = '';
-          res.on('data', chunk => data += chunk);
-          res.on('end', () => resolve(data));
+          res.on('data', chunk => { data += chunk; });
+          res.on('end', () => finish(resolve, data));
+        } else if (attempts >= maxAttempts) {
+          finish(reject, new Error(`Server failed to start after ${attempts} attempts (status ${res.statusCode})`));
         } else {
           retry();
         }
       });
       req.on('error', () => {
         if (attempts >= maxAttempts) {
-          reject(new Error('Server failed to start after timeout'));
+          finish(reject, new Error('Server failed to start after timeout'));
         } else {
           retry();
         }
       });
-      req.setTimeout(1000, () => { req.destroy(); retry(); });
+      req.setTimeout(1000, () => {
+        try { req.destroy(); } catch (_) {}
+        if (attempts >= maxAttempts) {
+          finish(reject, new Error('Server failed to start after timeout'));
+        } else {
+          retry();
+        }
+      });
     };
-    const retry = () => setTimeout(check, interval);
+
+    startupTimer = setTimeout(() => finish(reject, new Error('Server startup timed out (15s)')), 15000);
     check();
   });
 }
@@ -235,6 +317,13 @@ async function startServer() {
 }
 
 function createWindow() {
+  const existingWindow = BrowserWindow.getAllWindows()[0];
+  if (existingWindow && !existingWindow.isDestroyed()) {
+    mainWindow = existingWindow;
+    logLaunch('createWindow skipped', 'main window already exists');
+    return mainWindow;
+  }
+
   if (mainWindow && !mainWindow.isDestroyed()) {
     logLaunch('createWindow skipped', 'main window already exists');
     return mainWindow;
@@ -285,12 +374,17 @@ function createWindow() {
     }
   });
 
+  // Never allow renderer-driven popup windows. Any `target="_blank"` or
+  // `window.open()` should be handled outside the Electron window to avoid
+  // runaway window creation.
   mainWindow.webContents.setWindowOpenHandler(({ url }) => {
-    if (!url.includes('127.0.0.1') && !url.includes('localhost')) {
-      shell.openExternal(url);
-      return { action: 'deny' };
-    }
-    return { action: 'allow' };
+    try {
+      const isLocal = url.includes('127.0.0.1') || url.includes('localhost');
+      if (!isLocal) {
+        shell.openExternal(url);
+      }
+    } catch (_) {}
+    return { action: 'deny' };
   });
 
   return mainWindow;
@@ -322,10 +416,22 @@ app.on('window-all-closed', (event) => {
   }
 });
 
+app.on('will-quit', cleanupSingletonLock);
+process.on('exit', cleanupSingletonLock);
+process.on('SIGINT', () => {
+  cleanupSingletonLock();
+  process.exit(130);
+});
+process.on('SIGTERM', () => {
+  cleanupSingletonLock();
+  process.exit(143);
+});
+
 app.on('before-quit', () => {
   logLaunch('before-quit');
   isQuitting = true;
   killServer();
+  cleanupSingletonLock();
 });
 
 app.on('activate', () => {
