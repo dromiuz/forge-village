@@ -9,10 +9,10 @@
 <body>
   <div class="forge-app">
     <aside class="forge-sidebar card">
-      <div class="brand-block comic-shell">
+      <div class="brand-block">
         <p class="eyebrow">Forge Village</p>
-        <h1>Independent musician workspace</h1>
-        <p class="meta">Song-first. Local-first. Built to help artists ship real work.</p>
+        <h1>Music workspace</h1>
+        <p class="meta">Songs, files, notes, markers, and release progress in one place.</p>
       </div>
       <nav class="forge-nav">
         <button class="nav-tab active" data-tab="overview" type="button">Overview</button>
@@ -25,25 +25,9 @@
         <p class="version-info">Forge Village v1.0.0</p>
         <button id="aboutButton" type="button" class="about-button">About</button>
       </div>
-      <!-- sidebar-note character-stack hidden -->
-      <!--
-      <div class="sidebar-note character-stack">
-        <div id="sidebarBoxmanPanel" class="character-panel boxman-panel">
-          <img src="/assets/boxman.png" alt="Boxman" class="character-art official-art boxman-art" />
-          <div class="speech-bubble boxman-bubble">
-            <h4>Boxman</h4>
-            <p id="sidebarBoxman">Start with one real move.</p>
-          </div>
-        </div>
-        <div id="sidebarMartianPanel" class="character-panel martian-panel">
-          <img src="/assets/martian.png" alt="Martian" class="character-art official-art martian-art" />
-          <div class="speech-bubble martian-bubble">
-            <h4>Martian</h4>
-            <p id="sidebarMartian">Keep the signal clean.</p>
-          </div>
-        </div>
+      <div class="sidebar-note compact-sidebar-note">
+        <p class="meta sidebar-focus">Project, files, ideas, arrangement, progress.</p>
       </div>
-      -->
     </aside>
 
     <main class="forge-main">
@@ -125,13 +109,13 @@
           <article class="card song-board-card">
             <div class="section-head">
               <h2>Song board</h2>
-              <span class="pill">Open / edit / delete</span>
+              <span class="pill">Open • edit • remove</span>
             </div>
             <div id="songBoard" class="stack"></div>
           </article>
           <article class="card song-form-card">
             <div class="section-head">
-              <h2>Add or edit song</h2>
+              <h2>Create or refine song</h2>
               <span class="pill">Persistent</span>
             </div>
             <form id="songForm" class="stack">
@@ -191,7 +175,7 @@
         <section class="card song-detail-section">
           <div class="section-head">
             <h2>Song page</h2>
-            <span class="pill">Dedicated workspace</span>
+            <span class="pill">Focused workspace</span>
           </div>
           <div id="songDetail" class="song-detail empty-state">Select a song to open its dedicated page.</div>
         </section>
@@ -242,7 +226,7 @@
             <form id="assetUploadForm" class="stack">
               <label>
                 <span>Upload file</span>
-                <input id="assetUploadFile" type="file" />
+                <input id="assetUploadFile" type="file" multiple />
               </label>
               <label>
                 <span>Asset name</span>
@@ -353,7 +337,7 @@
     <div class="modal-content">
       <h3>About Forge Village</h3>
       <p><strong>Version 1.0.0</strong></p>
-      <p>Independent musician workspace — song-first, local-first. Built to help artists ship real work without fake SaaS sludge.</p>
+      <p>Local-first workspace for managing songs, files, notes, waveform markers, and release progress.</p>
       <p><strong>Features:</strong> Song tracking, lyrics, waveform markers, instrument tracking board, asset management, calendar, export/import.</p>
       <p><strong>Tech:</strong> Node.js + Express server, plain HTML/CSS/JS, local-first data storage.</p>
       <button id="aboutClose" type="button" class="modal-close">Close</button>
@@ -417,7 +401,9 @@
       audioDurations: {},
       activeMarkerId: null,
       pendingMarkerTime: null,
-      waveSurfer: null
+      waveSurfer: null,
+      calendarMonth: '',
+      selectedCalendarDate: ''
     };
 
     const $ = (id) => document.getElementById(id);
@@ -445,6 +431,63 @@
         hour: 'numeric',
         minute: '2-digit'
       });
+    }
+
+    function toCalendarDateInput(date) {
+      const year = date.getFullYear();
+      const month = String(date.getMonth() + 1).padStart(2, '0');
+      const day = String(date.getDate()).padStart(2, '0');
+      return `${year}-${month}-${day}`;
+    }
+
+    function parseCalendarDate(dateString) {
+      if (!dateString) return null;
+      const date = new Date(`${dateString}T00:00:00`);
+      return Number.isNaN(date.getTime()) ? null : date;
+    }
+
+    function formatCalendarMonth(date) {
+      return date.toLocaleDateString(undefined, { month: 'long', year: 'numeric' });
+    }
+
+    function eventTypeLabel(type) {
+      const labels = {
+        release: 'Release',
+        content: 'Content',
+        show: 'Show',
+        deadline: 'Deadline',
+        studio: 'Studio',
+        other: 'Other'
+      };
+      return labels[String(type || '').toLowerCase()] || 'Other';
+    }
+
+    function eventTypeClass(type) {
+      const classes = {
+        release: 'release',
+        content: 'content',
+        show: 'show',
+        deadline: 'deadline',
+        studio: 'studio',
+        other: 'other'
+      };
+      return classes[String(type || '').toLowerCase()] || 'other';
+    }
+
+    function moveCalendarMonth(delta) {
+      const current = parseCalendarDate(state.calendarMonth) || new Date();
+      const next = new Date(current.getFullYear(), current.getMonth() + delta, 1);
+      state.calendarMonth = toCalendarDateInput(next);
+      renderCalendar();
+    }
+
+    function selectCalendarDate(dateString) {
+      if (!dateString) return;
+      state.selectedCalendarDate = dateString;
+      if ($('eventId')) $('eventId').value = '';
+      if ($('eventDate')) $('eventDate').value = dateString;
+      if ($('eventTitle')) $('eventTitle').focus();
+      renderCalendar();
     }
 
     function titleCase(value) {
@@ -660,6 +703,20 @@
         const ratio = typeof relativeX === 'number' ? relativeX : 0;
         setMarkerTimeFromRatio(ratio);
       });
+
+      // PREMIUM: Audio-reactive visual feedback
+      waveSurfer.on('play', () => {
+        container.closest('.waveform-shell')?.classList.add('playing');
+        document.documentElement.style.setProperty('--is-playing', '1');
+      });
+      waveSurfer.on('pause', () => {
+        container.closest('.waveform-shell')?.classList.remove('playing');
+        document.documentElement.style.setProperty('--is-playing', '0');
+      });
+      waveSurfer.on('finish', () => {
+        container.closest('.waveform-shell')?.classList.remove('playing');
+        document.documentElement.style.setProperty('--is-playing', '0');
+      });
       container.addEventListener('click', (event) => {
         if (event.target.closest('.marker-pin')) return;
         const rect = container.getBoundingClientRect();
@@ -799,7 +856,7 @@
                       <span class="mini-pill">Tracking ${tracking.percent}%</span>
                       <span class="mini-pill">${tracking.done}/${tracking.total} done</span>
                       <span class="mini-pill">${markerCount} markers</span>
-                      <span id="waveformTimelineReadout" class="mini-pill">${formatTime(getAudioDuration(song))} timeline</span>
+                      <span class="waveform-timeline mini-pill">${formatTime(getAudioDuration(song))} timeline</span>
                     </div>
                   </div>
                   <div class="mini-actions">
@@ -884,17 +941,9 @@
         </div>
         <div class="song-page-columns">
           <div class="stack">
-            <div class="subpanel lyrics-panel">
-              <h4>Lyrics</h4>
-              <textarea id="songLyricsEditor" rows="16" placeholder="Write, paste, and refine lyrics here.">${escapeHtml(song.lyrics || '')}</textarea>
-              <div class="actions top-gap">
-                <button type="button" id="saveLyricsButton">Save lyrics</button>
-                <div id="songLyricsMessage" class="meta"></div>
-              </div>
-            </div>
             <div class="subpanel waveform-panel">
               <div class="section-head">
-                <h4>Waveform comments / markers</h4>
+                <h4>Audio review</h4>
                 <span class="pill">Audio-linked notes</span>
               </div>
               ${primaryAudioAsset ? `
@@ -984,7 +1033,7 @@
             </div>
             <div class="subpanel song-notes-panel">
               <div class="section-head">
-                <h4>Song notes</h4>
+                <h4>Ideas & notes</h4>
                 <span class="pill">Separate entries</span>
               </div>
               <form id="songNoteEntryForm" class="stack compact-stack">
@@ -1017,11 +1066,59 @@
                   </article>
                 `).join('') : '<p class="empty">No separate notes yet.</p>'}
               </div>
+              <div class="subpanel song-asset-upload-panel top-gap">
+                <div class="section-head">
+                  <h4>Files</h4>
+                  <span class="pill">Upload directly from this song</span>
+                </div>
+                <form id="songAssetUploadForm" class="stack compact-stack">
+                  <label>
+                    <span>Upload file</span>
+                    <input id="songAssetUploadFile" type="file" multiple />
+                  </label>
+                  <label>
+                    <span>Asset name</span>
+                    <input id="songAssetUploadName" type="text" placeholder="Defaults to file name" />
+                  </label>
+                  <label>
+                    <span>Notes</span>
+                    <textarea id="songAssetUploadNotes" rows="3" placeholder="What is this file and why does it matter?"></textarea>
+                  </label>
+                  <div class="form-grid">
+                    <label>
+                      <span>Type</span>
+                      <input id="songAssetUploadType" type="text" placeholder="artwork / video / photo / pdf / audio" />
+                    </label>
+                    <label>
+                      <span>Status</span>
+                      <select id="songAssetUploadStatus">
+                        <option value="idea">Idea</option>
+                        <option value="needed">Needed</option>
+                        <option value="in progress">In progress</option>
+                        <option value="approved">Approved</option>
+                        <option value="ready" selected>Ready</option>
+                        <option value="done">Done</option>
+                      </select>
+                    </label>
+                  </div>
+                  <div class="actions">
+                    <button type="submit">Upload asset file</button>
+                    <div id="songAssetUploadMessage" class="meta"></div>
+                  </div>
+                </form>
+              </div>
             </div>
           </div>
-          <div class="stack">
-            <div class="subpanel song-task-panel">
-              <h4>Song tasks</h4>
+          <div class="context-panels">
+            <div class="context-tab-bar">
+              <button type="button" class="context-tab active" data-cctx="tasks">Tasks</button>
+              <button type="button" class="context-tab" data-cctx="tracking">Tracking</button>
+              <button type="button" class="context-tab" data-cctx="lyrics">Lyrics</button>
+              <button type="button" class="context-tab" data-cctx="identity">Identity</button>
+            </div>
+            <div class="song-context-panel" data-panel="tasks">
+              <div class="subpanel song-task-panel">
+                <h4>Arrangement</h4>
               <div class="task-list">
                 ${(song.checklist || []).length ? (song.checklist || []).map((task) => `
                   <label class="task-row">
@@ -1035,10 +1132,12 @@
                 <input id="songChecklistText" type="text" placeholder="Add a song task" />
                 <button type="submit">Add task</button>
               </form>
+              </div>
             </div>
-            <div class="subpanel tracking-panel">
-              <div class="section-head">
-                <h4>Tracking board</h4>
+            <div class="song-context-panel" data-panel="tracking" style="display:none">
+              <div class="subpanel tracking-panel">
+                <div class="section-head">
+                  <h4>Tracking board</h4>
                 <button type="button" class="secondary-button" id="toggleTrackingBoardButton">${state.trackingVisible ? 'Hide tracking board' : 'Show tracking board'}</button>
               </div>
               <p class="body-copy">Optional on purpose. Use it when you want a real recording checklist instead of guessing what still needs to be tracked.</p>
@@ -1132,42 +1231,57 @@
                   `).join('') : '<p class="empty">No tracking items yet.</p>'}
                 </div>
               </div>
-            </div>
-            ${state.identityCardVisible ? `
-            <div class="subpanel song-identity-panel">
-              <div class="section-head">
-                <h4>Song identity</h4>
-                <button type="button" class="secondary-button" id="toggleIdentityCardButton">${state.identityCardVisible ? 'Hide identity card' : 'Show identity card'}</button>
               </div>
-              <p class="meta">Capture what makes this song matter</p>
-              <form id="songIdentityForm" class="stack compact-stack">
-                <label>
-                  <span>What is this song about?</span>
-                  <textarea id="songAbout" rows="3" placeholder="The core subject, story, or concept">${escapeHtml(song.about || '')}</textarea>
-                </label>
-                <label>
-                  <span>Emotional target</span>
-                  <input id="songEmotion" type="text" placeholder="How should listeners feel? (e.g., hopeful, nostalgic, defiant)" value="${escapeHtml(song.emotion || '')}" />
-                </label>
-                <label>
-                  <span>Visual lane</span>
-                  <textarea id="songVisualLaneIdentity" rows="3" placeholder="What world should this song feel like? Describe colors, textures, scenes, or references">${escapeHtml(song.visualLane || '')}</textarea>
-                </label>
-                <label>
-                  <span>What still feels unresolved?</span>
-                  <textarea id="songUnresolved" rows="3" placeholder="What questions remain? What needs more work? What feels incomplete?">${escapeHtml(song.unresolved || '')}</textarea>
-                </label>
-                <label>
-                  <span>Why does this song matter?</span>
-                  <textarea id="songWhyMatters" rows="3" placeholder="What makes this worth finishing? What impact could it have?">${escapeHtml(song.whyMatters || '')}</textarea>
-                </label>
-                <div class="actions">
-                  <button type="submit">Save identity</button>
-                  <div id="songIdentityMessage" class="meta"></div>
-                </div>
-              </form>
             </div>
-            ` : ''}
+            <div class="song-context-panel" data-panel="lyrics" style="display:none">
+              <div class="subpanel lyrics-panel">
+                <h4>Lyrics</h4>
+                <textarea id="songLyricsEditor" rows="14" placeholder="Write, paste, and refine lyrics here.">${escapeHtml(song.lyrics || '')}</textarea>
+                <div class="actions top-gap">
+                  <button type="button" id="saveLyricsButton">Save lyrics</button>
+                  <div id="songLyricsMessage" class="meta"></div>
+                </div>
+              </div>
+            </div>
+            <div class="song-context-panel" data-panel="identity" style="display:none">
+              <div class="subpanel song-identity-panel">
+                <div class="section-head">
+                  <h4>Song identity</h4>
+                  <button type="button" class="secondary-button" id="toggleIdentityCardButton">${state.identityCardVisible ? 'Hide identity card' : 'Show identity card'}</button>
+                </div>
+                ${state.identityCardVisible ? `
+                <p class="meta">Capture what makes this song matter</p>
+                <form id="songIdentityForm" class="stack compact-stack">
+                  <label>
+                    <span>What is this song about?</span>
+                    <textarea id="songAbout" rows="3" placeholder="The core subject, story, or concept">${escapeHtml(song.about || '')}</textarea>
+                  </label>
+                  <label>
+                    <span>Emotional target</span>
+                    <input id="songEmotion" type="text" placeholder="How should listeners feel? (e.g., hopeful, nostalgic, defiant)" value="${escapeHtml(song.emotion || '')}" />
+                  </label>
+                  <label>
+                    <span>Visual lane</span>
+                    <textarea id="songVisualLaneIdentity" rows="3" placeholder="What world should this song feel like? Describe colors, textures, scenes, or references">${escapeHtml(song.visualLane || '')}</textarea>
+                  </label>
+                  <label>
+                    <span>What still feels unresolved?</span>
+                    <textarea id="songUnresolved" rows="3" placeholder="What questions remain? What needs more work? What feels incomplete?">${escapeHtml(song.unresolved || '')}</textarea>
+                  </label>
+                  <label>
+                    <span>Why does this song matter?</span>
+                    <textarea id="songWhyMatters" rows="3" placeholder="What makes this worth finishing? What impact could it have?">${escapeHtml(song.whyMatters || '')}</textarea>
+                  </label>
+                  <div class="actions">
+                    <button type="submit">Save identity</button>
+                    <div id="songIdentityMessage" class="meta"></div>
+                  </div>
+                </form>
+                ` : `
+                <p class="meta">Identity card hidden. Use the toggle above to bring it back when you need the brief.</p>
+                `}
+              </div>
+            </div>
             <div class="subpanel">
               <h4>Release blockers</h4>
               <ul class="clean-list compact-list">
@@ -1197,10 +1311,10 @@
             trackingBoard: song.trackingBoard || [],
             waveformMarkers: song.waveformMarkers || []
           };
-          const res = await fetch('/api/workspace-data/song', {
-            method: 'POST',
+          const res = await fetch('/api/workspace-data/song/' + encodeURIComponent(song.id), {
+            method: 'PUT',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify(payload)
+            body: JSON.stringify({ lyrics: $('songLyricsEditor').value.trim() })
           });
           const data = await res.json();
           if (!res.ok) {
@@ -1208,50 +1322,13 @@
             return;
           }
           setMessage('songLyricsMessage', 'Lyrics saved.');
-          await refresh();
-          setActiveTab('songs');
+          song.lyrics = $('songLyricsEditor').value.trim();
+          if (data.workspace) state.workspace = data.workspace;
+          renderSongDetail();
         };
       }
 
-      const songIdentityForm = $('songIdentityForm');
-      if (songIdentityForm) {
-        songIdentityForm.addEventListener('submit', async (event) => {
-          event.preventDefault();
-          const payload = {
-            id: song.id,
-            title: song.title,
-            artist: song.artist,
-            stage: song.stage,
-            progress: Number(song.progress || 0),
-            notes: song.notes || '',
-            themes: song.themes || [],
-            visualLane: song.visualLane || '',
-            nextStep: song.nextStep || '',
-            releaseDate: song.releaseDate || '',
-            lyrics: song.lyrics || '',
-            about: $('songAbout').value.trim(),
-            emotion: $('songEmotion').value.trim(),
-            unresolved: $('songUnresolved').value.trim(),
-            whyMatters: $('songWhyMatters').value.trim(),
-            noteEntries: song.noteEntries || [],
-            trackingBoard: song.trackingBoard || [],
-            waveformMarkers: song.waveformMarkers || []
-          };
-          const res = await fetch('/api/workspace-data/song', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify(payload)
-          });
-          const data = await res.json();
-          if (!res.ok) {
-            setMessage('songIdentityMessage', data.error || 'Failed to save song identity.', true);
-            return;
-          }
-          setMessage('songIdentityMessage', 'Song identity saved.');
-          await refresh();
-          setActiveTab('songs');
-        });
-      }
+      // songIdentityForm submit handled by global delegation
 
       const toggleTrackingButton = $('toggleTrackingBoardButton');
       if (toggleTrackingButton) {
@@ -1277,42 +1354,50 @@
         };
       }
 
-      const songNoteEntryForm = $('songNoteEntryForm');
-      if (songNoteEntryForm) songNoteEntryForm.addEventListener('submit', addSongNoteEntry);
-      const trackingItemForm = $('trackingItemForm');
-      if (trackingItemForm) trackingItemForm.addEventListener('submit', saveTrackingItem);
-      const markerForm = $('markerForm');
-      if (markerForm) markerForm.addEventListener('submit', addMarker);
+            // songNoteEntryForm submit handled by global delegation
+            // trackingItemForm submit handled by global delegation
+            // markerForm submit handled by global delegation
 
-      const activeReviewAssetSelect = $('activeReviewAssetSelect');
-      if (activeReviewAssetSelect) {
-        activeReviewAssetSelect.addEventListener('change', async (event) => {
-          const assetId = event.target.value;
-          const res = await fetch('/api/workspace-data/song-active-review-asset', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ songId: song.id, assetId })
+      // activeReviewAssetSelect change handled by global delegation
+
+      if (primaryAudioAsset) {
+        requestAnimationFrame(() => {
+          requestAnimationFrame(() => {
+            initWaveSurfer(song, primaryAudioAsset);
           });
-          const data = await res.json();
-          if (!res.ok) {
-            setMessage('markerMessage', data.error || 'Failed to change review file.', true);
-            return;
-          }
-          setMessage('markerMessage', 'Active review file updated.');
-          await refresh();
-          setActiveTab('songs');
         });
+      } else {
+        destroyWaveSurfer();
       }
+    }
 
-      if (primaryAudioAsset) initWaveSurfer(song, primaryAudioAsset);
-      else destroyWaveSurfer();
+    function isImageAsset(asset) {
+      const kind = String(asset?.kind || '').toLowerCase();
+      const mime = String(asset?.mimeType || '').toLowerCase();
+      const type = String(asset?.type || '').toLowerCase();
+      const fileName = String(asset?.fileName || '').toLowerCase();
+      return kind === 'image' || mime.startsWith('image/') || type.includes('image') || /\.(png|jpg|jpeg|gif|webp|avif|bmp|tiff|svg)$/i.test(fileName) || fileName.includes('screenshot') || fileName.includes('thumbnail');
+    }
+
+    function isVideoAsset(asset) {
+      const kind = String(asset?.kind || '').toLowerCase();
+      const mime = String(asset?.mimeType || '').toLowerCase();
+      const type = String(asset?.type || '').toLowerCase();
+      const fileName = String(asset?.fileName || '').toLowerCase();
+      return kind === 'video' || mime.startsWith('video/') || type.includes('video') || /\.(mp4|mov|m4v|webm|mkv|avi|ogv)$/i.test(fileName) || fileName.includes('screen recording');
     }
 
     function renderAssetBoard() {
       const song = getSelectedSong();
       $('assetBoard').innerHTML = song
         ? ((song.assets || []).length
-            ? song.assets.map((asset) => `
+            ? song.assets.map((asset) => {
+                const preview = isImageAsset(asset)
+                  ? `<a class="asset-preview-link" href="${escapeHtml(asset.fileUrl)}" target="_blank" rel="noopener noreferrer"><img class="asset-preview asset-preview-image" src="${escapeHtml(asset.fileUrl)}" alt="${escapeHtml(asset.name || asset.fileName || 'Image asset')}" loading="lazy" /></a>`
+                  : isVideoAsset(asset)
+                    ? `<video class="asset-preview asset-preview-video" controls preload="metadata" src="${escapeHtml(asset.fileUrl || '')}"></video>`
+                    : '';
+                return `
                 <article class="subcard ${song.activeReviewAssetId === asset.id ? 'active-review-asset' : ''}">
                   <div class="item-head">
                     <div>
@@ -1324,30 +1409,146 @@
                       <button type="button" data-action="delete-asset" data-id="${escapeHtml(asset.id)}">Delete</button>
                     </div>
                   </div>
+                  ${preview ? `<div class="asset-preview-shell">${preview}</div>` : ''}
                   <p class="body-copy">${escapeHtml(asset.notes || '')}</p>
                   ${asset.fileUrl ? `<p class="meta"><a href="${escapeHtml(asset.fileUrl)}" target="_blank" rel="noopener noreferrer">Open file</a></p>` : ''}
                 </article>
-              `).join('')
+              `;
+              }).join('')
             : '<p class="empty">No assets for this song yet.</p>')
         : '<p class="empty">Select a song first.</p>';
     }
 
     function renderCalendar() {
-      const events = state.workspace?.events || [];
-      $('calendar').innerHTML = events.length
-        ? events.map((event) => `
-            <div class="event-row">
+      const allEvents = [...(state.workspace?.events || [])].filter(Boolean).sort((a, b) => {
+        const dateDiff = String(a.date || '').localeCompare(String(b.date || ''));
+        if (dateDiff !== 0) return dateDiff;
+        return String(a.title || '').localeCompare(String(b.title || ''));
+      });
+      if (!state.calendarMonth) {
+        state.calendarMonth = toCalendarDateInput(new Date());
+      }
+      const currentMonth = parseCalendarDate(state.calendarMonth) || new Date();
+      const monthStart = new Date(currentMonth.getFullYear(), currentMonth.getMonth(), 1);
+      const monthEnd = new Date(currentMonth.getFullYear(), currentMonth.getMonth() + 1, 0);
+      const monthKey = `${monthStart.getFullYear()}-${String(monthStart.getMonth() + 1).padStart(2, '0')}`;
+      const todayKey = toCalendarDateInput(new Date());
+      const eventsByDate = new Map();
+      const typeCounts = { release: 0, content: 0, show: 0, deadline: 0, studio: 0, other: 0 };
+      
+      for (const event of allEvents) {
+        const dateKey = String(event.date || '');
+        if (dateKey) {
+          if (!eventsByDate.has(dateKey)) eventsByDate.set(dateKey, []);
+          eventsByDate.get(dateKey).push(event);
+        }
+        const key = String(event.type || 'other').toLowerCase();
+        if (typeCounts[key] === undefined) typeCounts.other += 1;
+        else typeCounts[key] += 1;
+      }
+
+      const monthEvents = allEvents.filter((event) => String(event.date || '').startsWith(monthKey));
+      const upcomingEvents = allEvents.filter((event) => String(event.date || '') >= todayKey).slice(0, 6);
+      const totalUpcoming = allEvents.filter((event) => String(event.date || '') >= todayKey).length;
+      const selectedEventLabel = state.selectedCalendarDate ? formatDate(state.selectedCalendarDate) : 'No day selected';
+      const weekdayLabels = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
+      const startOffset = (monthStart.getDay() + 6) % 7;
+      const gridStart = new Date(monthStart);
+      gridStart.setDate(gridStart.getDate() - startOffset);
+      const gridDays = [];
+
+      for (let index = 0; index < 42; index += 1) {
+        const day = new Date(gridStart);
+        day.setDate(gridStart.getDate() + index);
+        const dateValue = toCalendarDateInput(day);
+        const inMonth = day.getMonth() === monthStart.getMonth();
+        const dayEvents = eventsByDate.get(dateValue) || [];
+        const isToday = dateValue === todayKey;
+        const isSelected = dateValue === state.selectedCalendarDate;
+        const dayChips = dayEvents.slice(0, 3).map((event) => `
+          <button type="button" class="calendar-event-chip type-${eventTypeClass(event.type)}" data-action="edit-event" data-id="${escapeHtml(event.id)}">
+            <span class="calendar-event-dot"></span>
+            <span class="calendar-event-chip-title">${escapeHtml(event.title)}</span>
+          </button>
+        `).join('');
+        const extraCount = dayEvents.length > 3 ? `<span class="calendar-event-more">+${dayEvents.length - 3} more</span>` : '';
+        gridDays.push(`
+          <article class="calendar-day ${inMonth ? '' : 'is-outside-month'} ${isToday ? 'is-today' : ''} ${isSelected ? 'is-selected' : ''}">
+            <div class="calendar-day-head">
+              <button type="button" class="calendar-day-button" data-action="select-calendar-date" data-date="${dateValue}">
+                <span class="calendar-day-number">${day.getDate()}</span>
+                ${isToday ? '<span class="calendar-day-badge">Today</span>' : ''}
+              </button>
+              <span class="calendar-day-count">${dayEvents.length || ''}</span>
+            </div>
+            <div class="calendar-event-stack">
+              ${dayChips || '<span class="calendar-day-empty">Click to add an event.</span>'}
+              ${extraCount}
+            </div>
+          </article>
+        `);
+      }
+
+      const typeSummary = [
+        ['release', typeCounts.release],
+        ['content', typeCounts.content],
+        ['show', typeCounts.show],
+        ['deadline', typeCounts.deadline],
+        ['studio', typeCounts.studio]
+      ].filter(([, count]) => count > 0).map(([type, count]) => `
+        <span class="calendar-stat-pill type-${type}">${eventTypeLabel(type)} ${count}</span>
+      `).join('');
+
+      const agenda = upcomingEvents.length
+        ? upcomingEvents.map((event) => `
+            <button type="button" class="calendar-agenda-item" data-action="edit-event" data-id="${escapeHtml(event.id)}">
               <div>
                 <strong>${escapeHtml(event.title)}</strong>
-                <span>${escapeHtml(event.type)} · ${formatDate(event.date)}${event.link ? ` · ${escapeHtml(event.link)}` : ''}</span>
+                <span>${formatDate(event.date)}${event.link ? ` · ${escapeHtml(event.link)}` : ''}</span>
               </div>
-              <div class="mini-actions">
-                <button type="button" data-action="edit-event" data-id="${escapeHtml(event.id)}">Edit</button>
-                <button type="button" data-action="delete-event" data-id="${escapeHtml(event.id)}">Delete</button>
+              <div class="calendar-agenda-meta">
+                <span class="calendar-agenda-type type-${eventTypeClass(event.type)}">${eventTypeLabel(event.type)}</span>
+                ${event.link ? `<span class="calendar-agenda-link">${escapeHtml(event.link)}</span>` : ''}
               </div>
-            </div>
+            </button>
           `).join('')
-        : '<div class="empty-state-guided"><p class="empty">No events yet.</p><p class="empty-hint">Add release dates, content deadlines, studio sessions, or shows. This helps you see what is coming at a glance.</p></div>';
+        : '<div class="calendar-empty-state"><p class="empty">No upcoming events.</p><p class="empty-hint">Click any day on the grid to schedule a release, deadline, studio session, or show.</p></div>';
+
+      $('calendar').innerHTML = `
+        <div class="calendar-shell-inner">
+          <div class="calendar-toolbar">
+            <div>
+              <p class="meta">Month view</p>
+              <h3 class="calendar-month-title">${formatCalendarMonth(monthStart)}</h3>
+              <p class="calendar-month-meta">${monthEvents.length} event${monthEvents.length === 1 ? '' : 's'} in view · ${totalUpcoming} upcoming · ${selectedEventLabel}</p>
+            </div>
+            <div class="calendar-nav">
+              <button type="button" class="secondary-button" data-action="calendar-prev">← Prev</button>
+              <button type="button" class="secondary-button" data-action="calendar-today">Today</button>
+              <button type="button" class="secondary-button" data-action="calendar-next">Next →</button>
+            </div>
+          </div>
+          <div class="calendar-stats">
+            <span class="calendar-stat-pill">Total ${allEvents.length}</span>
+            <span class="calendar-stat-pill">This month ${monthEvents.length}</span>
+            <span class="calendar-stat-pill">Upcoming ${totalUpcoming}</span>
+            ${typeSummary}
+          </div>
+          <div class="calendar-grid">
+            ${weekdayLabels.map((label) => `<div class="calendar-weekday">${label}</div>`).join('')}
+            ${gridDays.join('')}
+          </div>
+          <div class="calendar-agenda-shell">
+            <div class="section-head calendar-agenda-head">
+              <h4>Upcoming sessions</h4>
+              <span class="pill">Next 6</span>
+            </div>
+            <div class="calendar-agenda-list">
+              ${agenda}
+            </div>
+          </div>
+        </div>
+      `;
     }
 
     function renderNotesPanel() {
@@ -1367,6 +1568,12 @@
       renderAssetBoard();
       renderCalendar();
       renderNotesPanel();
+      // Don't reset the active tab on full re-render — preserve user's context tab
+      if (typeof showSongTab === 'function' && state.activeContextTab) {
+        showSongTab(state.activeContextTab);
+      } else if (typeof showSongTab === 'function') {
+        showSongTab('tasks');
+      }
     }
 
     function fillSongForm(song) {
@@ -1404,10 +1611,12 @@
       $('eventId').value = '';
       $('eventTitle').value = '';
       $('eventType').value = 'release';
-      $('eventDate').value = '';
+      $('eventDate').value = toCalendarDateInput(new Date());
       $('eventLink').value = getSelectedSong()?.title || '';
       $('eventNotes').value = '';
+      state.selectedCalendarDate = '';
       setMessage('eventFormMessage', '');
+      renderCalendar();
     }
 
     async function refresh() {
@@ -1495,10 +1704,22 @@
         setMessage('songFormMessage', 'Song title is required.', true);
         return;
       }
-      const res = await fetch('/api/workspace-data/song', {
-        method: 'POST',
+      const isUpdate = !!$('songId').value;
+      const res = await fetch('/api/workspace-data/song' + (isUpdate ? '/' + encodeURIComponent($('songId').value) : ''), {
+        method: isUpdate ? 'PUT' : 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(payload)
+        body: isUpdate ? JSON.stringify({
+          title: payload.title,
+          artist: payload.artist,
+          stage: payload.stage,
+          progress: payload.progress,
+          releaseDate: payload.releaseDate,
+          notes: payload.notes,
+          themes: payload.themes,
+          visualLane: payload.visualLane,
+          nextStep: payload.nextStep,
+          lyrics: payload.lyrics
+        }) : JSON.stringify(payload)
       });
       const data = await res.json();
       if (!res.ok) {
@@ -1533,58 +1754,147 @@
       await refresh();
     }
 
-    async function uploadAssetFile(event) {
-      event.preventDefault();
-      const song = getSelectedSong();
-      if (!song) {
-        setMessage('assetUploadMessage', 'Select a song first.', true);
-        return;
-      }
-      const file = $('assetUploadFile').files?.[0];
-      if (!file) {
-        setMessage('assetUploadMessage', 'Choose a file first.', true);
-        return;
-      }
-      const contentBase64 = await new Promise((resolve, reject) => {
-        const reader = new FileReader();
-        reader.onload = () => resolve(String(reader.result).split(',')[1] || '');
-        reader.onerror = reject;
-        reader.readAsDataURL(file);
-      });
-      const res = await fetch('/api/workspace-data/song-asset-upload', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          songId: song.id,
-          name: $('assetUploadName').value.trim() || file.name.replace(/\.[^.]+$/, ''),
-          type: $('assetUploadType').value.trim(),
-          status: $('assetUploadStatus').value,
-          notes: $('assetUploadNotes').value.trim(),
-          fileName: file.name,
-          mimeType: file.type,
-          isActiveReview: true,
-          contentBase64
-        })
-      });
-      const data = await res.json();
-      if (!res.ok) {
-        setMessage('assetUploadMessage', data.error || 'Failed to upload asset.', true);
-        return;
-      }
-      $('assetUploadFile').value = '';
-      $('assetUploadName').value = '';
-      $('assetUploadType').value = '';
-      $('assetUploadStatus').value = 'ready';
-      $('assetUploadNotes').value = '';
-      setMessage('assetUploadMessage', 'Asset file uploaded.');
-      await refresh();
-      setActiveTab('assets');
+    
+// Utility: Safe file size formatting
+    function formatFileSize(bytes) {
+      if (bytes === 0) return '0 Bytes';
+      const k = 1024;
+      const sizes = ['Bytes', 'KB', 'MB', 'GB'];
+      const i = Math.floor(Math.log(bytes) / Math.log(k));
+      return parseFloat((bytes / Math.pow(k, i)).toFixed(1)) + ' ' + sizes[i];
     }
 
+async function uploadAssetFile(event) {
+      event.preventDefault();
+      const form = event.currentTarget || event.target;
+      const isSongPageForm = form && form.id === 'songAssetUploadForm';
+      const prefix = isSongPageForm ? 'songAssetUpload' : 'assetUpload';
+      const messageId = `${prefix}Message`;
+      const song = getSelectedSong();
+      if (!song) {
+        setMessage(messageId, 'Select a song first.', true);
+        return;
+      }
+      const files = Array.from($(prefix + 'File').files || []);
+      if (!files.length) {
+        setMessage(messageId, 'Choose at least one file first.', true);
+        return;
+      }
+
+      // ── VALIDATION: Check total upload size before starting
+      const MAX_FILE_SIZE = 500 * 1024 * 1024; // 500MB per file
+      const oversizedFiles = files.filter(f => f.size > MAX_FILE_SIZE);
+      if (oversizedFiles.length > 0) {
+        setMessage(messageId, `File too large: ${oversizedFiles[0].name} (${formatFileSize(oversizedFiles[0].size)}). Max 500MB.`, true);
+        return;
+      }
+
+      const baseName = $(prefix + 'Name').value.trim();
+      const assetType = $(prefix + 'Type').value.trim();
+      const status = $(prefix + 'Status').value;
+      const notes = $(prefix + 'Notes').value.trim();
+      let uploadedCount = 0;
+      let activeReviewAssigned = false;
+      let firstUploadedAsset = null;
+      let latestWorkspace = null;
+
+      // ── DISABLING: Prevent double-submission during upload
+      const submitButton = form.querySelector('button[type="submit"]') || form.querySelector('button');
+      if (submitButton) {
+        submitButton.disabled = true;
+        submitButton.textContent = 'Uploading...';
+      }
+
+      try {
+        for (let index = 0; index < files.length; index += 1) {
+          const file = files[index];
+
+          // ── VALIDATION: Check file type client-side before sending
+          const allowedTypes = ['audio/', 'video/', 'image/', 'application/pdf', 'text/'];
+          const hasAllowedType = allowedTypes.some(t => (file.type || '').startsWith(t));
+          // Also allow files with no type (some browsers don't set it)
+          if (!hasAllowedType && file.type) {
+            setMessage(messageId, `Unsupported file type: ${file.type}. Allowed: audio, video, image, PDF, text.`, true);
+            return;
+          }
+
+          // ── VALIDATION: Reject empty files
+          if (file.size === 0) {
+            setMessage(messageId, `Empty file cannot be uploaded: ${file.name}`, true);
+            return;
+          }
+
+          setMessage(messageId, `Uploading ${index + 1}/${files.length}...`);
+          const formData = new FormData();
+          formData.append('file', file);
+          formData.append('songId', song.id);
+          formData.append('assetName', files.length === 1 && baseName ? baseName : file.name.replace(/\.[^.]+$/, ''));
+          if (assetType) formData.append('assetType', assetType);
+          formData.append('assetStatus', status);
+          formData.append('assetNotes', notes);
+          if (!activeReviewAssigned && /^audio\//i.test(file.type || '')) {
+            formData.append('isActiveReview', 'true');
+            activeReviewAssigned = true;
+          } else {
+            formData.append('isActiveReview', 'false');
+          }
+
+          // ── ABORT CONTROLLER: 60-second timeout for each upload
+          const controller = new AbortController();
+          const timeoutId = setTimeout(() => controller.abort(), 60000);
+
+          const res = await fetch('/api/files/upload', {
+            method: 'POST',
+            body: formData,
+            signal: controller.signal
+          });
+          clearTimeout(timeoutId);
+
+          const data = await res.json().catch(() => ({}));
+          if (!res.ok || !data.ok) {
+            throw new Error(data.error || `Failed to upload ${file.name}`);
+          }
+          uploadedCount += 1;
+          if (data.workspace) latestWorkspace = data.workspace;
+          // Track first uploaded asset for sync if in song detail view
+          if (!firstUploadedAsset && data.asset) {
+            firstUploadedAsset = data.asset;
+          }
+        }
+
+        // ── CLEAR FORM: Reset all input fields
+        $(prefix + 'File').value = '';
+        $(prefix + 'Name').value = '';
+        $(prefix + 'Type').value = '';
+        $(prefix + 'Status').value = 'ready';
+        $(prefix + 'Notes').value = '';
+        setMessage(messageId, `Uploaded ${uploadedCount}/${files.length} file${files.length === 1 ? '' : 's'}.`);
+
+        if (latestWorkspace) state.workspace = latestWorkspace;
+        renderAll();
+        if (isSongPageForm) {
+          if (typeof showSongTab === 'function') showSongTab(state.activeContextTab || 'tasks');
+        } else {
+          setActiveTab('assets');
+        }
+      } catch (error) {
+        if (error.name === 'AbortError') {
+          setMessage(messageId, 'Upload timed out. Please try again.', true);
+        } else {
+          setMessage(messageId, error.message || 'Failed to upload asset.', true);
+        }
+      } finally {
+        // ── RE-ENABLE: Always re-enable the submit button
+        if (submitButton) {
+          submitButton.disabled = false;
+          submitButton.textContent = 'Upload asset file';
+        }
+      }
+    }
     async function saveEvent(event) {
       event.preventDefault();
+      const eventId = $('eventId').value.trim();
       const payload = {
-        id: $('eventId').value || undefined,
         title: $('eventTitle').value.trim(),
         type: $('eventType').value,
         date: $('eventDate').value,
@@ -1595,8 +1905,8 @@
         setMessage('eventFormMessage', 'Event title and date are required.', true);
         return;
       }
-      const res = await fetch('/api/workspace-data/event', {
-        method: 'POST',
+      const res = await fetch(eventId ? `/api/workspace-data/event/${encodeURIComponent(eventId)}` : '/api/workspace-data/event', {
+        method: eventId ? 'PUT' : 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(payload)
       });
@@ -1605,8 +1915,11 @@
         setMessage('eventFormMessage', data.error || 'Failed to save event.', true);
         return;
       }
-      setMessage('eventFormMessage', 'Event saved.');
+      state.calendarMonth = payload.date;
       resetEventForm();
+      $('eventDate').value = payload.date;
+      state.selectedCalendarDate = payload.date;
+      setMessage('eventFormMessage', eventId ? 'Event updated.' : 'Event saved.');
       await refresh();
       setActiveTab('calendar');
     }
@@ -1626,11 +1939,15 @@
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ songId: song.id, text: textValue })
       });
-      if (res.ok) {
-        $('songChecklistText').value = '';
-        await refresh();
-        setActiveTab('songs');
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        setMessage('songChecklistMessage', data.error || 'Failed to save checklist item.', true);
+        return;
       }
+      $('songChecklistText').value = '';
+      if (data.workspace) state.workspace = data.workspace;
+      renderAll();
+      if (typeof showSongTab === 'function') showSongTab(state.activeContextTab || 'tasks');
     }
 
     async function addSongNoteEntry(event) {
@@ -1648,7 +1965,7 @@
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ songId: song.id, title, body })
       });
-      const data = await res.json();
+      const data = await res.json().catch(() => ({}));
       if (!res.ok) {
         setMessage('songNoteEntryMessage', data.error || 'Failed to save note.', true);
         return;
@@ -1656,8 +1973,9 @@
       $('songNoteEntryTitle').value = '';
       $('songNoteEntryBody').value = '';
       setMessage('songNoteEntryMessage', 'Note added.');
-      await refresh();
-      setActiveTab('songs');
+      if (data.workspace) state.workspace = data.workspace;
+      renderAll();
+      if (typeof showSongTab === 'function') showSongTab(state.activeContextTab || 'tasks');
     }
 
     async function saveTrackingItem(event) {
@@ -1685,7 +2003,7 @@
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(payload)
       });
-      const data = await res.json();
+      const data = await res.json().catch(() => ({}));
       if (!res.ok) {
         setMessage('trackingItemMessage', data.error || 'Failed to save tracking item.', true);
         return;
@@ -1693,73 +2011,85 @@
       state.editingTrackingId = null;
       setMessage('trackingItemMessage', id ? 'Tracking item updated.' : 'Tracking item added.');
       state.trackingVisible = true;
-      await refresh();
-      setActiveTab('songs');
+      if (data.workspace) state.workspace = data.workspace;
+      renderAll();
+      if (typeof showSongTab === 'function') showSongTab(state.activeContextTab || 'tasks');
     }
 
     async function addMarker(event) {
       event.preventDefault();
       const song = getSelectedSong();
       if (!song) return;
-      const parsedTime = parseMarkerTimeInput($('markerTime').value);
+      const timeInput = $('markerTime');
+      let parsedTime = parseMarkerTimeInput(timeInput.value);
+      if (parsedTime === null) {
+        if (state.pendingMarkerTime !== null && state.pendingMarkerTime !== undefined) {
+          parsedTime = Math.max(0, Number(state.pendingMarkerTime) || 0);
+          timeInput.value = formatTime(parsedTime);
+        } else {
+          const audio = $('waveformAudioPlayer');
+          if (audio && Number.isFinite(audio.currentTime)) {
+            parsedTime = Math.max(0, Number(audio.currentTime) || 0);
+            timeInput.value = formatTime(parsedTime);
+          }
+        }
+      }
       if (parsedTime === null || parsedTime < 0) {
-        setMessage('markerMessage', 'Enter time as seconds (123.450), mm:ss (1:12.450), or mm:ss.SSS (1:12.450).', true);
+        setMessage('markerMessage', 'Add a time, or click the waveform to auto-fill it.', true);
         return;
       }
-      
+
       const isEditing = state.activeMarkerId !== null;
       const payload = {
         songId: song.id,
         time: parsedTime,
         label: $('markerLabel').value.trim(),
         comment: $('markerComment').value.trim(),
-        color: $('markerColor').value
+        color: $('markerColor').value,
+        category: $('markerCategory')?.value || ''
       };
-      
+
       if (!payload.label && !payload.comment) {
         setMessage('markerMessage', 'Give the marker a label or comment.', true);
         return;
       }
-      
+
       let res, data;
       if (isEditing) {
-        // Update existing marker
         res = await fetch(`/api/workspace-data/song-marker/${encodeURIComponent(state.activeMarkerId)}`, {
           method: 'PATCH',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify(payload)
         });
-        data = await res.json();
+        data = await res.json().catch(() => ({}));
         if (!res.ok) {
           setMessage('markerMessage', data.error || 'Failed to update marker.', true);
           return;
         }
         setMessage('markerMessage', 'Marker updated.');
       } else {
-        // Add new marker
         res = await fetch('/api/workspace-data/song-marker', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify(payload)
         });
-        data = await res.json();
+        data = await res.json().catch(() => ({}));
         if (!res.ok) {
           setMessage('markerMessage', data.error || 'Failed to add marker.', true);
           return;
         }
         setMessage('markerMessage', 'Marker added.');
       }
-      
-      // Reset form state
+
       state.pendingMarkerTime = null;
       state.activeMarkerId = null;
       $('markerTime').value = '';
       $('markerLabel').value = '';
       $('markerComment').value = '';
       $('markerColor').value = 'purple';
-      
-      await refresh();
-      setActiveTab('songs');
+      if (data.workspace) state.workspace = data.workspace;
+      renderAll();
+      if (typeof showSongTab === 'function') showSongTab(state.activeContextTab || 'tasks');
     }
 
     async function applyTrackingTemplate(templateKey) {
@@ -1769,6 +2099,7 @@
       const existing = song.trackingBoard || [];
       const existingKeys = new Set(existing.map((item) => `${String(item.instrument || '').toLowerCase()}|${String(item.part || '').toLowerCase()}|${String(item.section || '').toLowerCase()}`));
       let added = 0;
+      let latestWorkspace = null;
       for (const row of template) {
         const key = `${String(row.instrument || '').toLowerCase()}|${String(row.part || '').toLowerCase()}|${String(row.section || '').toLowerCase()}`;
         if (existingKeys.has(key)) continue;
@@ -1777,18 +2108,118 @@
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ songId: song.id, ...row })
         });
+        const data = await res.json().catch(() => ({}));
         if (res.ok) {
           added += 1;
           existingKeys.add(key);
+          if (data.workspace) latestWorkspace = data.workspace;
         }
       }
       setMessage('trackingTemplateMessage', added ? `Added ${added} template items.` : 'Template already mostly exists here.');
       state.trackingVisible = true;
-      await refresh();
-      setActiveTab('songs');
+      if (latestWorkspace) state.workspace = latestWorkspace;
+      renderAll();
+      if (typeof showSongTab === 'function') showSongTab(state.activeContextTab || 'tasks');
     }
 
+    // Song context tab switching    // Song context tab switching
+    window.showSongTab = function(name) {
+      state.activeContextTab = name;
+      document.querySelectorAll('.song-context-panel').forEach(p => {
+        p.style.display = p.dataset.panel === name ? '' : 'none';
+      });
+      document.querySelectorAll('.context-tab').forEach(b => {
+        b.classList.toggle('active', b.dataset.cctx === name);
+      });
+    };
+
+    /* Global form submission delegation for song-detail dynamically rendered forms */
+    document.addEventListener('submit', async (event) => {
+      // songIdentityForm
+      if (event.target && event.target.id === 'songIdentityForm') {
+        event.preventDefault();
+        const song = getSelectedSong();
+        if (!song) return;
+        const res = await fetch('/api/workspace-data/song/' + encodeURIComponent(song.id), {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            about: $('songAbout').value.trim(),
+            emotion: $('songEmotion').value.trim(),
+            visualLane: $('songVisualLaneIdentity').value.trim(),
+            unresolved: $('songUnresolved').value.trim(),
+            whyMatters: $('songWhyMatters').value.trim()
+          })
+        });
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok) {
+          setMessage('songIdentityMessage', data.error || 'Failed to save song identity.', true);
+          return;
+        }
+        setMessage('songIdentityMessage', 'Song identity saved.');
+        song.about = $('songAbout').value.trim();
+        song.emotion = $('songEmotion').value.trim();
+        song.visualLane = $('songVisualLaneIdentity').value.trim();
+        song.unresolved = $('songUnresolved').value.trim();
+        song.whyMatters = $('songWhyMatters').value.trim();
+        if (data.workspace) state.workspace = data.workspace;
+        renderAll();
+        if (typeof showSongTab === 'function') showSongTab(state.activeContextTab || 'tasks');
+        return;
+      }
+      // songNoteEntryForm      // songNoteEntryForm
+      if (event.target && event.target.id === 'songNoteEntryForm') {
+        event.preventDefault();
+        await addSongNoteEntry(event);
+        return;
+      }
+      // trackingItemForm
+      if (event.target && event.target.id === 'trackingItemForm') {
+        event.preventDefault();
+        await saveTrackingItem(event);
+        return;
+      }
+      // markerForm
+      if (event.target && event.target.id === 'markerForm') {
+        event.preventDefault();
+        await addMarker(event);
+        return;
+      }
+    });
+
+    document.addEventListener('change', async (event) => {
+      const target = event.target;
+      if (!(target instanceof HTMLElement)) return;
+      // activeReviewAssetSelect
+      if (target.id === 'activeReviewAssetSelect') {
+        const song = getSelectedSong();
+        if (!song) return;
+        const assetId = target.value;
+        const res = await fetch(`/api/workspace-data/song/${song.id}/set-active-file`, {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ assetId })
+        });
+        const data = await res.json();
+        if (!res.ok) {
+          setMessage('markerMessage', data.error || 'Failed to change review file.', true);
+          return;
+        }
+        setMessage('markerMessage', 'Active review file updated.');
+        if (data.workspace) state.workspace = data.workspace;
+        renderSongDetail(); // don't use refresh - preserves waveform
+        return;
+      }
+    });
+
+    // existing body click handler below
+
     document.body.addEventListener('click', async (event) => {
+      // Context tab clicks
+      if (event.target.dataset.cctx) {
+        window.showSongTab(event.target.dataset.cctx);
+        return;
+      }
       const tab = event.target.closest('.nav-tab');
       if (tab) {
         setActiveTab(tab.dataset.tab);
@@ -1817,10 +2248,10 @@
       } else if (action === 'back-to-board') {
         backToSongBoard();
       } else if (action === 'toggle-song-check' && song) {
-        const res = await fetch(`/api/workspace-data/song-checklist/${encodeURIComponent(id)}`, {
+        const res = await fetch(`/api/workspace-data/song-checklist/${encodeURIComponent(song.id)}`, {
           method: 'PATCH',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ songId: song.id, done: target.checked })
+          body: JSON.stringify({ id: id, done: target.checked })
         });
         if (res.ok) await refresh();
       } else if (action === 'delete-song-check' && song) {
@@ -1838,7 +2269,9 @@
       } else if (action === 'jump-marker' && song) {
         const marker = (song.waveformMarkers || []).find((item) => item.id === id);
         if (marker) {
-          state.activeMarkerId = marker.id;
+          // Jump should navigate to the marker/time without entering edit mode.
+          // This keeps the form in "add" mode unless the user explicitly clicks Edit.
+          state.activeMarkerId = null;
           state.pendingMarkerTime = marker.time;
           const audio = $('waveformAudioPlayer');
           if (audio) {
@@ -1868,8 +2301,16 @@
             }
           }
           renderSongDetail();
-          const markerCard = document.getElementById(`marker-card-${marker.id}`);
-          if (markerCard) markerCard.scrollIntoView({ behavior: 'smooth', block: 'center' });
+          requestAnimationFrame(() => {
+            const markerPin = document.querySelector(`.marker-pin[data-id="${CSS.escape(marker.id)}"]`);
+            const waveformShell = markerPin?.closest('.waveform-shell') || document.querySelector('.waveform-shell');
+            if (waveformShell) waveformShell.scrollIntoView({ behavior: 'smooth', block: 'center' });
+            if (markerPin) {
+              markerPin.scrollIntoView({ behavior: 'smooth', block: 'center', inline: 'center' });
+              markerPin.classList.add('jump-target');
+              setTimeout(() => markerPin.classList.remove('jump-target'), 1800);
+            }
+          });
           setMessage('markerMessage', `${formatTime(marker.time)} — ${marker.label || marker.comment || 'Marker'}`);
         }
       } else if (action === 'edit-marker' && song) {
@@ -1889,10 +2330,10 @@
       } else if (action === 'delete-marker' && song) {
         await deleteByEndpoint(`/api/workspace-data/song-marker/${encodeURIComponent(id)}?songId=${encodeURIComponent(song.id)}`);
       } else if (action === 'set-active-review' && song) {
-        const res = await fetch('/api/workspace-data/song-active-review-asset', {
-          method: 'POST',
+        const res = await fetch(`/api/workspace-data/song/${song.id}/set-active-file`, {
+          method: 'PATCH',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ songId: song.id, assetId: id })
+          body: JSON.stringify({ assetId: id })
         });
         const data = await res.json();
         if (!res.ok) {
@@ -1904,27 +2345,50 @@
         setActiveTab('assets');
       } else if (action === 'delete-asset' && song) {
         await deleteByEndpoint(`/api/workspace-data/song-asset/${encodeURIComponent(id)}?songId=${encodeURIComponent(song.id)}`);
+      } else if (action === 'calendar-prev') {
+        moveCalendarMonth(-1);
+      } else if (action === 'calendar-next') {
+        moveCalendarMonth(1);
+      } else if (action === 'calendar-today') {
+        state.calendarMonth = toCalendarDateInput(new Date());
+        state.selectedCalendarDate = toCalendarDateInput(new Date());
+        renderCalendar();
+      } else if (action === 'select-calendar-date') {
+        const dateValue = target.dataset.date;
+        if (dateValue) selectCalendarDate(dateValue);
       } else if (action === 'edit-event') {
         const eventItem = (state.workspace?.events || []).find((item) => item.id === id);
         if (eventItem) {
           $('eventId').value = eventItem.id || '';
           $('eventTitle').value = eventItem.title || '';
           $('eventType').value = eventItem.type || 'release';
-          $('eventDate').value = eventItem.date || '';
+          $('eventDate').value = eventItem.date || toCalendarDateInput(new Date());
           $('eventLink').value = eventItem.link || '';
           $('eventNotes').value = eventItem.notes || '';
+          if (eventItem.date) {
+            const editMonth = parseCalendarDate(eventItem.date);
+            if (editMonth) {
+              state.calendarMonth = toCalendarDateInput(new Date(editMonth.getFullYear(), editMonth.getMonth(), 1));
+              state.selectedCalendarDate = eventItem.date;
+              renderCalendar();
+            }
+          }
           setActiveTab('calendar');
         }
       } else if (action === 'delete-event') {
         if (!id) return;
         const res = await fetch(`/api/workspace-data/event/${encodeURIComponent(id)}`, { method: 'DELETE' });
-        if (res.ok) await refresh();
+        if (res.ok) {
+          if ($('eventId') && $('eventId').value === id) resetEventForm();
+          await refresh();
+        }
       }
     });
 
     document.body.addEventListener('change', async (event) => {
       const target = event.target;
       if (!(target instanceof HTMLElement)) return;
+      if (target.id === 'activeReviewAssetSelect') return; // handled by global delegation above
       if (target.dataset.action === 'set-tracking-status') {
         const song = getSelectedSong();
         if (!song) return;
@@ -1957,6 +2421,30 @@
     $('refreshButton').addEventListener('click', refresh);
     document.addEventListener('submit', (event) => {
       if (event.target && event.target.id === 'songChecklistForm') addSongChecklist(event);
+      if (event.target && event.target.id === 'songAssetUploadForm') {
+        event.preventDefault();
+        event.stopPropagation();
+        uploadAssetFile(event);
+      }
+    });
+
+    document.addEventListener('submit', (event) => {
+      if (event.target && event.target.id === 'songIdentityForm') songIdentityForm(event);
+      if (event.target && event.target.id === 'songNoteEntryForm') {
+        event.preventDefault();
+        event.stopPropagation();
+        if (typeof addSongNoteEntry === 'function') addSongNoteEntry(event);
+      }
+      if (event.target && event.target.id === 'trackingItemForm') {
+        event.preventDefault();
+        event.stopPropagation();
+        if (typeof saveTrackingItem === 'function') saveTrackingItem(event);
+      }
+      if (event.target && event.target.id === 'markerForm') {
+        event.preventDefault();
+        event.stopPropagation();
+        if (typeof addMarker === 'function') addMarker(event);
+      }
     });
 
     resetSongForm();
@@ -1990,7 +2478,10 @@
         url.includes('/api/project/meta') ||
         url.includes('/api/files/upload')
       );
-      if (_isWrite) showSaveIndicator('saving', 'Saving...');
+      if (_isWrite) {
+        showSaveIndicator('saving', 'Saving...');
+        searchCache = null; // invalidate search cache on writes
+      }
       return originalFetch.apply(this, args).then(res => {
         if (_isWrite) showSaveIndicator('saved', 'Saved');
         return res;
@@ -2046,30 +2537,57 @@
       // Songs
       (ws.songs || []).forEach(song => {
         const fields = [song.title, song.artist, song.notes, song.lyrics, song.themes, song.visualLane, song.nextStep].filter(Boolean);
-        if (fields.some(f => f.toLowerCase().includes(q))) {
-          results.push({ type: 'Song', title: song.title, desc: song.notes ? song.notes.substring(0, 80) : '', action: () => { state.selectedSongId = song.id; renderSongDetail(song); } });
+        if (fields.some(f => String(f).toLowerCase().includes(q))) {
+          results.push({
+            type: 'Song',
+            title: song.title,
+            desc: song.notes ? song.notes.substring(0, 80) : '',
+            action: () => {
+              state.selectedSongId = song.id;
+              setActiveTab('songs');
+              showFullPageSongView(song.id);
+            }
+          });
         }
         // Markers
-        (song.markers || []).forEach(marker => {
+        (song.waveformMarkers || []).forEach(marker => {
           if ((marker.label && marker.label.toLowerCase().includes(q)) || (marker.comment && marker.comment.toLowerCase().includes(q))) {
-            results.push({ type: 'Marker', title: `${marker.label || 'Marker'} — ${song.title}`, desc: marker.comment || '', action: () => { state.selectedSongId = song.id; renderSongDetail(song); } });
+            results.push({
+              type: 'Marker',
+              title: `${marker.label || 'Marker'} — ${song.title}`,
+              desc: marker.comment || '',
+              action: () => {
+                state.selectedSongId = song.id;
+                setActiveTab('songs');
+                showFullPageSongView(song.id);
+              }
+            });
           }
         });
         // Notes
-        (song.notes || []).forEach(note => {
+        (song.noteEntries || []).forEach(note => {
           if (note.text && note.text.toLowerCase().includes(q)) {
-            results.push({ type: 'Note', title: `Note — ${song.title}`, desc: note.text.substring(0, 80), action: () => { state.selectedSongId = song.id; renderSongDetail(song); } });
+            results.push({
+              type: 'Note',
+              title: `Note — ${song.title}`,
+              desc: note.text.substring(0, 80),
+              action: () => {
+                state.selectedSongId = song.id;
+                setActiveTab('songs');
+                showFullPageSongView(song.id);
+              }
+            });
           }
         });
       });
       // Workspace notes
-      if (ws.projectNotes && ws.projectNotes.toLowerCase().includes(q)) {
-        results.push({ type: 'Project Note', title: 'Workspace Notes', desc: ws.projectNotes.substring(0, 100), action: () => { setActiveTab('notes'); } });
+      if (ws.notes && ws.notes.toLowerCase().includes(q)) {
+        results.push({ type: 'Project Note', title: 'Workspace Notes', desc: ws.notes.substring(0, 100), action: () => { setActiveTab('notes'); } });
       }
       // Events
       (ws.events || []).forEach(ev => {
         if ((ev.title && ev.title.toLowerCase().includes(q)) || (ev.notes && ev.notes.toLowerCase().includes(q))) {
-          results.push({ type: 'Event', title: ev.title, desc: ev.notes ? ev.notes.substring(0, 80) : '', action: () => { setActiveTab('calendar'); } });
+          results.push({ type: 'Event', title: ev.title, desc: ev.notes ? ev.notes.substring(0, 80) : '', action: () => { if (ev.date) { state.calendarMonth = ev.date; state.selectedCalendarDate = ev.date; } setActiveTab('calendar'); renderCalendar(); } });
         }
       });
       return results.slice(0, 20);
@@ -2247,13 +2765,22 @@
       };
       const msg = $('songDetailEditMsg');
       try {
-        const res = await fetch('/api/workspace-data/song', {
-          method: 'POST',
+        const res = await fetch('/api/workspace-data/song/' + encodeURIComponent(song.id), {
+          method: 'PUT',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(payload)
+          body: JSON.stringify({
+            title: payload.title,
+            artist: payload.artist,
+            stage: payload.stage,
+            progress: payload.progress,
+            releaseDate: payload.releaseDate,
+            themes: typeof payload.themes === 'string' ? payload.themes.split(',').map(s => s.trim()).filter(Boolean) : payload.themes,
+            nextStep: payload.nextStep,
+            visualLane: payload.visualLane
+          })
         });
+        const data = await res.json().catch(() => ({}));
         if (!res.ok) {
-          const data = await res.json();
           msg.textContent = data.error || 'Failed to save.';
           msg.className = 'meta error-text';
           return;
@@ -2261,10 +2788,17 @@
         msg.textContent = 'Song updated.';
         msg.className = 'meta';
         $('songDetailEditForm').style.display = 'none';
-        await refresh();
-        // Re-select the song to show updated detail
-        state.selectedSongId = song.id;
-        showFullPageSongView(song.id);
+        song.title = payload.title;
+        song.artist = payload.artist;
+        song.stage = payload.stage;
+        song.progress = payload.progress;
+        song.releaseDate = payload.releaseDate;
+        song.themes = typeof payload.themes === 'string' ? payload.themes.split(',').map(s => s.trim()).filter(Boolean) : payload.themes;
+        song.nextStep = payload.nextStep;
+        song.visualLane = payload.visualLane;
+        if (data.workspace) state.workspace = data.workspace;
+        renderAll();
+        if (typeof showSongTab === 'function') showSongTab(state.activeContextTab || 'tasks');
       } catch (err) {
         msg.textContent = 'Save failed: ' + err.message;
         msg.className = 'meta error-text';
