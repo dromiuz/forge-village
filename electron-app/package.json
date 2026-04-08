@@ -1,6 +1,6 @@
 {
   "name": "forge-village",
-  "version": "2.1.1",
+  "version": "2.1.2",
   "description": "Independent musician workspace — song-first, local-first",
   "main": "main.js",
   "scripts": {
